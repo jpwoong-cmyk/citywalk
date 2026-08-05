@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#b7d7e8">
+  <meta name="description" content="A walkable Three.js city scene inspired by central Cần Thơ, Vietnam.">
+  <title>Cần Thơ Street Walk</title>
+  <link rel="stylesheet" href="./css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="app" aria-label="Cần Thơ 3D walking experience">
+    <canvas id="cityCanvas" aria-label="Interactive 3D city scene"></canvas>
+
+    <section id="loadingScreen" class="loading-screen" aria-live="polite">
+      <div class="loading-panel">
+        <div class="eyebrow">10.044179, 105.7856213</div>
+        <h1>Cần Thơ Street Walk</h1>
+        <p>Walk through a tropical Vietnamese neighbourhood built with Three.js.</p>
+        <div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div>
+        <p id="loadingText" class="loading-text">Building the streets…</p>
+        <button id="startButton" type="button" disabled>Enter the city</button>
+        <div class="control-note">
+          <span><kbd>WASD</kbd> or arrows to move</span>
+          <span>Mouse or drag to look</span>
+          <span><kbd>Shift</kbd> to jog</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="hud" aria-hidden="true">
+      <div class="location-chip">
+        <span class="pulse-dot"></span>
+        <div>
+          <strong>Cần Thơ, Việt Nam</strong>
+          <small>10.044179, 105.7856213</small>
+        </div>
+      </div>
+      <div id="statusChip" class="status-chip">Walking</div>
+    </div>
+
+    <div id="crosshair" class="crosshair" aria-hidden="true"></div>
+
+    <section class="mobile-controls" aria-label="Walking controls">
+      <div class="dpad" aria-label="Movement buttons">
+        <button class="move-btn up" type="button" data-move="forward" aria-label="Move forward">▲</button>
+        <button class="move-btn left" type="button" data-move="left" aria-label="Move left">◀</button>
+        <button class="move-btn down" type="button" data-move="backward" aria-label="Move backward">▼</button>
+        <button class="move-btn right" type="button" data-move="right" aria-label="Move right">▶</button>
+      </div>
+      <div id="lookPad" class="look-pad" aria-label="Drag here to look around">
+        <span>DRAG TO LOOK</span>
+      </div>
+    </section>
+
+    <button id="helpButton" class="help-button" type="button" aria-expanded="false" aria-controls="helpPanel">?</button>
+    <aside id="helpPanel" class="help-panel" hidden>
+      <h2>Controls</h2>
+      <p><strong>Desktop:</strong> click the scene, then move with WASD or arrow keys. Move the mouse to look. Press Esc to release the cursor.</p>
+      <p><strong>Mobile:</strong> use the directional pad to walk and drag the right-hand zone to look.</p>
+      <p>Buildings block movement. Pedestrians and scooters follow their own routes.</p>
+    </aside>
+
+    <div class="attribution">City scene inspired by Cần Thơ · Built with Three.js</div>
+  </main>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
