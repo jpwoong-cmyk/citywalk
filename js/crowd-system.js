@@ -1,121 +1,332 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { seededRandom } from './materials.js';
 
-const skinTones = [0xf0c7a5, 0xd6a27c, 0xc88963, 0xa86e4f, 0xe5b78d];
-const shirtColors = [0x264f6a,0x9a423d,0xd2b047,0x4c7353,0xe6ded1,0x72548b,0x30363a,0xb56d37];
-const trouserColors = [0x252b31,0x3e4e5e,0x665b4b,0x263b42,0x59605f];
+const MODEL_URLS = {
+  xbot: 'https://threejs.org/examples/models/gltf/Xbot.glb',
+  michelle: 'https://threejs.org/examples/models/gltf/Michelle.glb',
+  avatar: 'https://threejs.org/examples/models/gltf/readyplayer.me.glb'
+};
 
-function material(color, roughness=0.78) { return new THREE.MeshStandardMaterial({ color, roughness }); }
-function shadowify(root) { root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); }
+function withTimeout(promise, timeoutMs, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs))
+  ]);
+}
 
-class ProceduralPerson {
-  constructor(seed, path, scene) {
+function cloneMaterials(root, hueShift = 0, saturationScale = 1, lightnessShift = 0) {
+  root.traverse(object => {
+    if (!object.isMesh) return;
+    object.castShadow = true;
+    object.receiveShadow = true;
+    object.frustumCulled = true;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    const cloned = materials.map(material => {
+      if (!material) return material;
+      const result = material.clone();
+      const name = `${result.name} ${object.name}`.toLowerCase();
+      const protectedMaterial = /(skin|face|eye|mouth|teeth|hair)/.test(name);
+      if (result.color && !protectedMaterial) {
+        const hsl = {};
+        result.color.getHSL(hsl);
+        result.color.setHSL((hsl.h + hueShift + 1) % 1, Math.min(1, hsl.s * saturationScale), Math.max(0.05, Math.min(0.92, hsl.l + lightnessShift)));
+      }
+      result.roughness = Math.max(0.35, result.roughness ?? 0.7);
+      return result;
+    });
+    object.material = Array.isArray(object.material) ? cloned : cloned[0];
+  });
+}
+
+function findAnimation(gltf, names) {
+  const lowerNames = names.map(name => name.toLowerCase());
+  return gltf.animations.find(clip => lowerNames.some(name => clip.name.toLowerCase().includes(name))) || gltf.animations[0] || null;
+}
+
+function defaultPaths() {
+  return [
+    [new THREE.Vector3(-92, 0.1, -7), new THREE.Vector3(-35, 0.1, -7), new THREE.Vector3(22, 0.1, -7), new THREE.Vector3(92, 0.1, -7)],
+    [new THREE.Vector3(92, 0.1, 7), new THREE.Vector3(28, 0.1, 7), new THREE.Vector3(-31, 0.1, 7), new THREE.Vector3(-92, 0.1, 7)],
+    [new THREE.Vector3(-55, 0.1, -88), new THREE.Vector3(-55, 0.1, -24), new THREE.Vector3(-55, 0.1, 28), new THREE.Vector3(-55, 0.1, 88)],
+    [new THREE.Vector3(61, 0.1, 88), new THREE.Vector3(61, 0.1, 29), new THREE.Vector3(61, 0.1, -25), new THREE.Vector3(61, 0.1, -88)]
+  ];
+}
+
+class Walker {
+  constructor({ model, gltf, path, seed, scene }) {
     this.rand = seededRandom(seed);
-    this.path = path;
+    this.path = new THREE.CatmullRomCurve3(path, false, 'centripetal', 0.35);
     this.progress = this.rand();
-    this.speed = 0.55 + this.rand() * 0.75;
-    this.phase = this.rand() * Math.PI * 2;
     this.direction = this.rand() > 0.5 ? 1 : -1;
+    this.speed = 0.72 + this.rand() * 0.72;
     this.group = new THREE.Group();
-    this.group.name = `Pedestrian-${seed}`;
-    this.build();
+    this.group.name = `RealPedestrian-${seed}`;
+    this.model = SkeletonUtils.clone(model);
+    const hueShift = (this.rand() - 0.5) * 0.32;
+    cloneMaterials(this.model, hueShift, 0.8 + this.rand() * 0.35, (this.rand() - 0.5) * 0.07);
+    const scale = 0.88 + this.rand() * 0.14;
+    this.model.scale.setScalar(scale);
+    this.group.add(this.model);
+    this.addAccessory();
     scene.add(this.group);
-  }
 
-  build() {
-    const heightScale = 0.60 + this.rand() * 0.09;
-    const bodyWidth = 0.72 + this.rand() * 0.18;
-    const skin = material(skinTones[Math.floor(this.rand()*skinTones.length)],0.7);
-    const shirt = material(shirtColors[Math.floor(this.rand()*shirtColors.length)],0.82);
-    const trousers = material(trouserColors[Math.floor(this.rand()*trouserColors.length)],0.86);
-    const shoes = material(this.rand()>0.5 ? 0x22282b : 0x79563c,0.9);
-    const hair = material([0x171615,0x31261f,0x463126][Math.floor(this.rand()*3)],0.88);
-
-    this.torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.36*bodyWidth,0.66,5,10),shirt);
-    this.torso.position.y = 1.72;
-    this.torso.scale.set(1,1.06,0.72);
-    this.group.add(this.torso);
-
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.25,18,14),skin);
-    this.head.position.y = 2.58;
-    this.head.scale.set(0.88,1.05,0.9);
-    this.group.add(this.head);
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.255,18,10,0,Math.PI*2,0,Math.PI*0.55),hair);
-    hairCap.position.set(0,2.67,0);
-    this.group.add(hairCap);
-
-    this.leftArm = this.makeLimb(0.12,0.72,shirt,skin); this.leftArm.position.set(-0.42*bodyWidth,2.03,0); this.group.add(this.leftArm);
-    this.rightArm = this.makeLimb(0.12,0.72,shirt,skin); this.rightArm.position.set(0.42*bodyWidth,2.03,0); this.group.add(this.rightArm);
-    this.leftLeg = this.makeLeg(trousers,shoes); this.leftLeg.position.set(-0.19,0.87,0); this.group.add(this.leftLeg);
-    this.rightLeg = this.makeLeg(trousers,shoes); this.rightLeg.position.set(0.19,0.87,0); this.group.add(this.rightLeg);
-
-    if (this.rand() > 0.78) {
-      const bag = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.52,0.17),material(this.rand()>0.5?0x6e4a31:0x243e4d,0.85));
-      bag.position.set(0.48,1.62,0.16); bag.rotation.z = -0.12; this.group.add(bag);
+    this.mixer = new THREE.AnimationMixer(this.model);
+    const walkClip = findAnimation(gltf, ['walk']);
+    if (walkClip) {
+      this.action = this.mixer.clipAction(walkClip);
+      this.action.timeScale = 0.82 + this.rand() * 0.34;
+      this.action.play();
+      this.mixer.setTime(this.rand() * walkClip.duration);
     }
-    if (this.rand() > 0.88) {
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.05,20),material(0xc79e50));
-      brim.position.set(0,2.82,0); this.group.add(brim);
-      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.23,0.25,0.22,18),material(0xc79e50));
-      crown.position.set(0,2.92,0); this.group.add(crown);
+  }
+
+  addAccessory() {
+    if (this.rand() > 0.62) {
+      const backpack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34, 0.48, 0.16),
+        new THREE.MeshStandardMaterial({ color: [0x31444f, 0x5a4031, 0x39483b][Math.floor(this.rand() * 3)], roughness: 0.86 })
+      );
+      backpack.position.set(0, 1.15, 0.18);
+      backpack.rotation.x = -0.08;
+      backpack.castShadow = true;
+      this.group.add(backpack);
     }
-
-    this.group.scale.setScalar(heightScale);
-    shadowify(this.group);
+    if (this.rand() > 0.83) {
+      const capMaterial = new THREE.MeshStandardMaterial({ color: [0x2f3b43, 0x71433c, 0x8a7847][Math.floor(this.rand() * 3)], roughness: 0.8 });
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.13, 18), capMaterial);
+      crown.position.set(0, 1.75, 0);
+      crown.castShadow = true;
+      this.group.add(crown);
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.14), capMaterial);
+      brim.position.set(0, 1.71, -0.14);
+      brim.castShadow = true;
+      this.group.add(brim);
+    }
   }
 
-  makeLimb(radius,length,upperMat,skinMat) {
-    const pivot = new THREE.Group();
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(radius,length*0.55,4,8),upperMat); upper.position.y = -length*0.22; pivot.add(upper);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(radius*0.88,10,8),skinMat); hand.position.y = -length*0.62; pivot.add(hand);
-    return pivot;
-  }
-
-  makeLeg(trouserMat,shoeMat) {
-    const pivot = new THREE.Group();
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.66,4,8),trouserMat); leg.position.y = -0.34; pivot.add(leg);
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.25,0.16,0.4),shoeMat); shoe.position.set(0,-0.79,-0.08); pivot.add(shoe);
-    return pivot;
-  }
-
-  update(dt, time) {
-    const length = this.path.getLength();
-    this.progress = (this.progress + this.direction * dt * this.speed / length + 1) % 1;
+  update(deltaTime) {
+    const pathLength = Math.max(1, this.path.getLength());
+    this.progress += this.direction * deltaTime * this.speed / pathLength;
+    if (this.progress > 1) {
+      this.progress = 1;
+      this.direction = -1;
+    } else if (this.progress < 0) {
+      this.progress = 0;
+      this.direction = 1;
+    }
     const point = this.path.getPointAt(this.progress);
     const tangent = this.path.getTangentAt(this.progress).multiplyScalar(this.direction);
     this.group.position.copy(point);
-    this.group.rotation.y = Math.atan2(tangent.x,tangent.z);
-    const gait = Math.sin(time * 7.2 * this.speed + this.phase);
-    this.leftLeg.rotation.x = gait * 0.55;
-    this.rightLeg.rotation.x = -gait * 0.55;
-    this.leftArm.rotation.x = -gait * 0.48;
-    this.rightArm.rotation.x = gait * 0.48;
-    this.torso.position.y = 1.72 + Math.abs(Math.sin(time*7.2*this.speed+this.phase))*0.025;
-    this.head.rotation.y = Math.sin(time*0.7+this.phase)*0.1;
+    this.group.rotation.y = Math.atan2(tangent.x, tangent.z) + Math.PI;
+    this.mixer.update(deltaTime);
+  }
+}
+
+class IdlePerson {
+  constructor({ model, gltf, position, rotation, seed, scene }) {
+    this.rand = seededRandom(seed);
+    this.group = new THREE.Group();
+    this.model = SkeletonUtils.clone(model);
+    cloneMaterials(this.model, (this.rand() - 0.5) * 0.24, 0.82 + this.rand() * 0.3, (this.rand() - 0.5) * 0.05);
+    const scale = 0.87 + this.rand() * 0.14;
+    this.model.scale.setScalar(scale);
+    this.group.add(this.model);
+    this.group.position.copy(position);
+    this.group.rotation.y = rotation;
+    scene.add(this.group);
+    this.baseY = position.y;
+    this.phase = this.rand() * Math.PI * 2;
+    this.mixer = new THREE.AnimationMixer(this.model);
+    const idleClip = findAnimation(gltf, ['idle']);
+    if (idleClip) {
+      this.action = this.mixer.clipAction(idleClip);
+      this.action.timeScale = 0.75 + this.rand() * 0.2;
+      this.action.play();
+      this.mixer.setTime(this.rand() * idleClip.duration);
+    }
+  }
+
+  update(deltaTime, elapsed) {
+    this.mixer.update(deltaTime);
+    this.group.position.y = this.baseY + Math.sin(elapsed * 0.75 + this.phase) * 0.006;
+    this.group.rotation.y += Math.sin(elapsed * 0.3 + this.phase) * 0.00015;
+  }
+}
+
+function createFallbackHuman(seed) {
+  const rand = seededRandom(seed);
+  const group = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: [0xd4a17c, 0xb77d5e, 0xe0b18b][Math.floor(rand() * 3)], roughness: 0.72 });
+  const shirt = new THREE.MeshStandardMaterial({ color: [0x35576a, 0x76423c, 0x4e674f, 0xb7a06c, 0x51485e][Math.floor(rand() * 5)], roughness: 0.84 });
+  const trousers = new THREE.MeshStandardMaterial({ color: [0x252b2e, 0x394450, 0x514b42][Math.floor(rand() * 3)], roughness: 0.9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x211f1d, roughness: 0.88 });
+
+  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.32, 10), trousers);
+  hips.position.y = 0.92;
+  group.add(hips);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.23, 0.82, 12), shirt);
+  torso.position.y = 1.42;
+  group.add(torso);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.14, 10), skin);
+  neck.position.y = 1.9;
+  group.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), skin);
+  head.scale.set(0.84, 1.08, 0.9);
+  head.position.y = 2.08;
+  group.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.205, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.52), dark);
+  hair.position.y = 2.15;
+  group.add(hair);
+
+  const limbs = {};
+  [-1, 1].forEach(side => {
+    const armPivot = new THREE.Group();
+    armPivot.position.set(side * 0.31, 1.68, 0);
+    const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.55, 9), shirt);
+    upperArm.position.y = -0.26;
+    armPivot.add(upperArm);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.48, 9), skin);
+    forearm.position.y = -0.72;
+    armPivot.add(forearm);
+    group.add(armPivot);
+    limbs[side < 0 ? 'leftArm' : 'rightArm'] = armPivot;
+
+    const legPivot = new THREE.Group();
+    legPivot.position.set(side * 0.14, 0.82, 0);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.115, 0.82, 10), trousers);
+    leg.position.y = -0.38;
+    legPivot.add(leg);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.34), dark);
+    shoe.position.set(0, -0.83, -0.055);
+    legPivot.add(shoe);
+    group.add(legPivot);
+    limbs[side < 0 ? 'leftLeg' : 'rightLeg'] = legPivot;
+  });
+
+  group.scale.setScalar(0.82 + rand() * 0.1);
+  group.traverse(object => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+  return { group, limbs };
+}
+
+class FallbackWalker {
+  constructor({ path, seed, scene }) {
+    this.rand = seededRandom(seed);
+    this.path = new THREE.CatmullRomCurve3(path, false, 'centripetal', 0.35);
+    this.progress = this.rand();
+    this.direction = this.rand() > 0.5 ? 1 : -1;
+    this.speed = 0.65 + this.rand() * 0.55;
+    const built = createFallbackHuman(seed);
+    this.group = built.group;
+    this.limbs = built.limbs;
+    this.phase = this.rand() * Math.PI * 2;
+    scene.add(this.group);
+  }
+
+  update(deltaTime, elapsed) {
+    const length = Math.max(1, this.path.getLength());
+    this.progress += this.direction * deltaTime * this.speed / length;
+    if (this.progress > 1 || this.progress < 0) {
+      this.direction *= -1;
+      this.progress = Math.max(0, Math.min(1, this.progress));
+    }
+    const point = this.path.getPointAt(this.progress);
+    const tangent = this.path.getTangentAt(this.progress).multiplyScalar(this.direction);
+    this.group.position.copy(point);
+    this.group.rotation.y = Math.atan2(tangent.x, tangent.z);
+    const gait = Math.sin(elapsed * 6.2 * this.speed + this.phase);
+    this.limbs.leftLeg.rotation.x = gait * 0.48;
+    this.limbs.rightLeg.rotation.x = -gait * 0.48;
+    this.limbs.leftArm.rotation.x = -gait * 0.38;
+    this.limbs.rightArm.rotation.x = gait * 0.38;
   }
 }
 
 export class CrowdSystem {
-  constructor(scene, count=28) {
+  constructor(scene, walkPaths = []) {
     this.scene = scene;
+    this.paths = walkPaths.filter(path => path.length >= 2);
+    if (!this.paths.length) this.paths = defaultPaths();
     this.people = [];
-    this.paths = this.createPaths();
-    for (let i=0;i<count;i++) this.people.push(new ProceduralPerson(1200+i*19,this.paths[i%this.paths.length],scene));
+    this.loader = new GLTFLoader();
+    this.loadedModels = {};
   }
 
-  createPaths() {
-    const makeLoop = points => new THREE.CatmullRomCurve3(points.map(([x,z])=>new THREE.Vector3(x,0.12,z)),true,'catmullrom',0.18);
-    return [
-      makeLoop([[-108,-9],[-70,-9],[-35,-9],[0,-9],[36,-9],[75,-9],[108,-9],[108,-12],[-108,-12]]),
-      makeLoop([[-108,9],[-72,9],[-32,9],[5,9],[42,9],[76,9],[108,9],[108,12],[-108,12]]),
-      makeLoop([[-63,-82],[-63,-45],[-63,-15],[-63,20],[-63,52],[-63,82],[-60,82],[-60,-82]]),
-      makeLoop([[-49,-82],[-49,-42],[-49,-16],[-49,18],[-49,51],[-49,82],[-46,82],[-46,-82]]),
-      makeLoop([[42,-80],[42,-45],[42,-14],[42,22],[42,55],[42,80],[45,80],[45,-80]]),
-      makeLoop([[55,-80],[55,-45],[55,-14],[55,22],[55,55],[55,80],[58,80],[58,-80]]),
-      makeLoop([[-100,-55],[-60,-55],[-20,-55],[20,-55],[60,-55],[104,-55],[104,-59],[-100,-59]]),
-      makeLoop([[69,37],[106,37],[108,72],[70,72]])
-    ];
+  loadModel(key, url) {
+    return withTimeout(this.loader.loadAsync(url), 12000, key).then(gltf => {
+      this.loadedModels[key] = gltf;
+      return gltf;
+    });
   }
 
-  update(dt,time) { this.people.forEach(p=>p.update(dt,time)); }
+  async init(onProgress = () => {}) {
+    onProgress(0.1, 'Streaming rigged pedestrians…');
+    const results = await Promise.allSettled([
+      this.loadModel('xbot', MODEL_URLS.xbot),
+      this.loadModel('michelle', MODEL_URLS.michelle),
+      this.loadModel('avatar', MODEL_URLS.avatar)
+    ]);
+    onProgress(0.68, 'Placing the crowd naturally…');
+
+    const xbot = this.loadedModels.xbot;
+    if (xbot) {
+      for (let index = 0; index < Math.min(12, this.paths.length * 3); index += 1) {
+        this.people.push(new Walker({
+          model: xbot.scene,
+          gltf: xbot,
+          path: this.paths[index % this.paths.length],
+          seed: 1300 + index * 23,
+          scene: this.scene
+        }));
+      }
+    }
+
+    const staticSources = [this.loadedModels.michelle, this.loadedModels.avatar].filter(Boolean);
+    if (staticSources.length) {
+      const idlePlacements = Array.from({ length: 6 }, (_, index) => {
+        const path = this.paths[index % this.paths.length];
+        const pointIndex = Math.min(path.length - 1, Math.max(0, Math.floor((path.length - 1) * (0.25 + (index % 3) * 0.25))));
+        const position = path[pointIndex].clone();
+        position.y = 0.08;
+        const neighbour = path[Math.min(path.length - 1, pointIndex + 1)] || path[Math.max(0, pointIndex - 1)];
+        const direction = neighbour.clone().sub(position);
+        return { position, rotation: Math.atan2(direction.x, direction.z) + (index % 2 ? Math.PI * 0.5 : -Math.PI * 0.5) };
+      });
+      idlePlacements.forEach(({ position, rotation }, index) => {
+        const source = staticSources[index % staticSources.length];
+        this.people.push(new IdlePerson({
+          model: source.scene,
+          gltf: source,
+          position,
+          rotation,
+          seed: 2200 + index * 31,
+          scene: this.scene
+        }));
+      });
+    }
+
+    if (!xbot) {
+      console.warn('Realistic pedestrian model failed to load; using local fallback humans.', results);
+      for (let index = 0; index < 14; index += 1) {
+        this.people.push(new FallbackWalker({
+          path: this.paths[index % this.paths.length],
+          seed: 3300 + index * 29,
+          scene: this.scene
+        }));
+      }
+    }
+
+    onProgress(1, xbot ? 'Rigged pedestrians ready.' : 'Fallback pedestrians ready.');
+    return { realisticModelsLoaded: Boolean(xbot), total: this.people.length };
+  }
+
+  update(deltaTime, elapsed) {
+    this.people.forEach(person => person.update(deltaTime, elapsed));
+  }
 }
