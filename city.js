@@ -73,7 +73,25 @@ const assetFiles = {
   manhole: "Prop_ManholeCover.gltf"
 };
 
+const PEOPLE_ROOT = "./assets/people/";
+const peopleFiles = {
+  casual_male: "Casual_Male.gltf",
+  casual_female: "Casual_Female.gltf",
+  casual2_male: "Casual2_Male.gltf",
+  casual2_female: "Casual2_Female.gltf",
+  casual3_male: "Casual3_Male.gltf",
+  casual3_female: "Casual3_Female.gltf",
+  suit_male: "Suit_Male.gltf",
+  suit_female: "Suit_Female.gltf",
+  worker_male: "Worker_Male.gltf",
+  worker_female: "Worker_Female.gltf",
+  old_male: "OldClassy_Male.gltf",
+  old_female: "OldClassy_Female.gltf"
+};
+
 const templates = {};
+const peopleTemplates = {};
+const mixers = [];
 const movingCars = [];
 const pedestrians = [];
 const swayingTrees = [];
@@ -82,7 +100,8 @@ let loadedCount = 0;
 
 function updateLoading(label) {
   loadedCount++;
-  const percent = Math.round((loadedCount / Object.keys(assetFiles).length) * 100);
+  const totalAssets = Object.keys(assetFiles).length + Object.keys(peopleFiles).length;
+  const percent = Math.round((loadedCount / totalAssets) * 100);
   loadingFill.style.width = `${percent}%`;
   loadingText.textContent = `${label} · ${percent}%`;
 }
@@ -104,7 +123,21 @@ async function loadAsset(key, file) {
   updateLoading(file);
 }
 
-await Promise.all(Object.entries(assetFiles).map(([key, file]) => loadAsset(key, file)));
+async function loadPerson(key, file) {
+  const gltf = await loader.loadAsync(PEOPLE_ROOT + file);
+  prepareTemplate(gltf.scene);
+  peopleTemplates[key] = {
+    scene: gltf.scene,
+    animations: gltf.animations
+  };
+  updateLoading(file);
+}
+
+await Promise.all([
+  ...Object.entries(assetFiles).map(([key, file]) => loadAsset(key, file)),
+  ...Object.entries(peopleFiles).map(([key, file]) => loadPerson(key, file))
+]);
+
 buildCity();
 buildLivingLayer();
 loadingText.textContent = "City alive";
@@ -279,38 +312,76 @@ function addLoopCar({ axis, lane, direction, speed, offset, color }) {
   movingCars.push({ car, axis, direction, speed, currentSpeed: speed, min: -60, max: 60 });
 }
 
-function makePedestrian(bodyColor) {
-  const person = new THREE.Group();
-  const skin = new THREE.MeshStandardMaterial({ color: 0xd1a27e, roughness: 0.9 });
-  const cloth = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.85 });
-  const pants = new THREE.MeshStandardMaterial({ color: 0x2d333a, roughness: 0.9 });
+function instantiatePerson(type) {
+  const source = peopleTemplates[type];
+  if (!source) throw new Error(`Unknown person type: ${type}`);
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.72, 4, 8), cloth);
-  torso.position.y = 1.45;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), skin);
-  head.position.y = 2.32;
-  person.add(torso, head);
+  const person = skeletonClone(source.scene);
+  person.updateMatrixWorld(true);
 
-  const limbGeo = new THREE.CapsuleGeometry(0.09, 0.55, 3, 6);
-  const armL = new THREE.Mesh(limbGeo, cloth);
-  const armR = new THREE.Mesh(limbGeo, cloth);
-  const legL = new THREE.Mesh(limbGeo, pants);
-  const legR = new THREE.Mesh(limbGeo, pants);
-  armL.position.set(-0.37, 1.48, 0);
-  armR.position.set(0.37, 1.48, 0);
-  legL.position.set(-0.14, 0.55, 0);
-  legR.position.set(0.14, 0.55, 0);
-  person.add(armL, armR, legL, legR);
-  person.userData.limbs = { armL, armR, legL, legR };
-  return person;
+  // Normalize every character to roughly human scale regardless of source export scale.
+  const initialBox = new THREE.Box3().setFromObject(person);
+  const initialSize = initialBox.getSize(new THREE.Vector3());
+  const targetHeight = 2.05;
+  const scale = initialSize.y > 0 ? targetHeight / initialSize.y : 1;
+  person.scale.setScalar(scale);
+
+  person.updateMatrixWorld(true);
+  const scaledBox = new THREE.Box3().setFromObject(person);
+  const center = scaledBox.getCenter(new THREE.Vector3());
+
+  // Centre the model on its route position and place feet on ground.
+  person.position.x -= center.x;
+  person.position.z -= center.z;
+  person.position.y -= scaledBox.min.y;
+
+  person.traverse((obj) => {
+    if (!obj.isMesh) return;
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+  });
+
+  const mixer = new THREE.AnimationMixer(person);
+  const walkClip =
+    THREE.AnimationClip.findByName(source.animations, "Walk") ||
+    THREE.AnimationClip.findByName(source.animations, "Run") ||
+    source.animations[0];
+
+  if (walkClip) {
+    const action = mixer.clipAction(walkClip);
+    action.reset();
+    action.setEffectiveTimeScale(1);
+    action.play();
+  }
+
+  mixers.push(mixer);
+
+  return { person, mixer };
 }
 
-function addPedestrianRoute(points, speed, color, startT) {
-  const curve = new THREE.CatmullRomCurve3(points.map(([x,z]) => new THREE.Vector3(x, 0, z)), true, "catmullrom", 0.08);
-  const person = makePedestrian(color);
-  person.position.copy(curve.getPointAt(startT));
+function addPedestrianRoute(points, speed, personType, startT) {
+  const curve = new THREE.CatmullRomCurve3(
+    points.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+    true,
+    "catmullrom",
+    0.08
+  );
+
+  const { person, mixer } = instantiatePerson(personType);
+  const pos = curve.getPointAt(startT);
+  person.position.x += pos.x;
+  person.position.z += pos.z;
+
   animatedWorld.add(person);
-  pedestrians.push({ person, curve, t: startT, speed, stride: Math.random() * Math.PI * 2 });
+
+  pedestrians.push({
+    person,
+    mixer,
+    curve,
+    t: startT,
+    speed,
+    baseY: person.position.y
+  });
 }
 
 function makeTrafficLight(x, z, rotation, nsPrimary) {
@@ -357,12 +428,16 @@ function buildLivingLayer() {
   const walkA = [[-42,8],[-10,8],[-10,42],[-42,42]];
   const walkB = [[10,-42],[42,-42],[42,-8],[10,-8]];
   const park = [[-36,16],[-17,16],[-17,34],[-36,34]];
-  addPedestrianRoute(walkA, 1.55, 0x476f91, .08);
-  addPedestrianRoute(walkA, 1.35, 0x8a5d4f, .48);
-  addPedestrianRoute(walkB, 1.7, 0x566e4a, .15);
-  addPedestrianRoute(walkB, 1.5, 0x6e547f, .67);
-  addPedestrianRoute(park, 1.05, 0x9b6f3d, .2);
-  addPedestrianRoute(park, .9, 0x435b63, .72);
+  addPedestrianRoute(walkA, 1.55, "casual_male", .08);
+  addPedestrianRoute(walkA, 1.35, "casual_female", .48);
+  addPedestrianRoute(walkB, 1.7, "suit_male", .15);
+  addPedestrianRoute(walkB, 1.5, "suit_female", .67);
+  addPedestrianRoute(park, 1.05, "old_male", .2);
+  addPedestrianRoute(park, .9, "casual3_female", .72);
+  addPedestrianRoute(walkA, 1.25, "worker_male", .72);
+  addPedestrianRoute(walkB, 1.42, "worker_female", .38);
+  addPedestrianRoute(park, 1.12, "casual2_male", .46);
+  addPedestrianRoute(walkA, 1.30, "casual2_female", .27);
 
   makeTrafficLight(-5.8, -5.8, 0, true);
   makeTrafficLight(5.8, 5.8, Math.PI, true);
@@ -421,18 +496,22 @@ function updateCars(dt, phase) {
 function updatePedestrians(dt) {
   for (const p of pedestrians) {
     p.t = (p.t + (dt * p.speed) / 180) % 1;
+
     const pos = p.curve.getPointAt(p.t);
     const tangent = p.curve.getTangentAt(p.t);
-    p.person.position.copy(pos);
+
+    // Route movement.
+    p.person.position.x = pos.x;
+    p.person.position.z = pos.z;
+
+    // Face the direction of travel.
+    // If a specific pack appears backwards, add Math.PI here.
     p.person.rotation.y = Math.atan2(tangent.x, tangent.z);
-    p.stride += dt * (5 + p.speed * 1.7);
-    const swing = Math.sin(p.stride) * 0.58;
-    const { armL, armR, legL, legR } = p.person.userData.limbs;
-    armL.rotation.x = swing;
-    armR.rotation.x = -swing;
-    legL.rotation.x = -swing;
-    legR.rotation.x = swing;
-    p.person.position.y = 0.03 + Math.abs(Math.sin(p.stride * 2)) * 0.025;
+
+    // Keep imported skeleton animations advancing.
+    if (p.mixer) {
+      p.mixer.update(dt * (0.82 + p.speed * 0.12));
+    }
   }
 }
 
