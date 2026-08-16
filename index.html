@@ -1,77 +1,51 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#9fb7c4">
-  <meta name="description" content="A realistic first-person Three.js walk around 10.044179, 105.7856213 in Cần Thơ, Vietnam.">
-  <title>Cần Thơ Realistic Street Walk</title>
-  <link rel="stylesheet" href="./css/style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Downtown Three.js City</title>
+  <link rel="stylesheet" href="./style.css" />
+
+  <!-- No npm / Node required. Three.js is loaded directly from a CDN. -->
   <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
-      }
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
     }
+  }
   </script>
 </head>
+
 <body>
-  <main id="app" aria-label="Realistic Cần Thơ walking experience">
-    <canvas id="cityCanvas" aria-label="Interactive three-dimensional city"></canvas>
+  <main id="app" aria-label="Interactive 3D downtown city">
+    <canvas id="city-canvas"></canvas>
 
-    <section id="loadingScreen" class="loading-screen" aria-live="polite">
-      <div class="loading-panel">
-        <p class="eyebrow">10.044179, 105.7856213</p>
-        <h1>Cần Thơ Street Walk</h1>
-        <p class="intro">A realistic browser-scale reconstruction using live OpenStreetMap geometry when available.</p>
-        <div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div>
-        <p id="loadingText" class="loading-text">Preparing the renderer…</p>
-        <button id="startButton" type="button" disabled>Enter the street</button>
-        <div class="control-note">
-          <span><kbd>WASD</kbd> or arrow keys</span>
-          <span>Mouse or drag to look</span>
-          <span><kbd>Shift</kbd> to jog</span>
-        </div>
+    <section class="city-hud" aria-label="City controls">
+      <div>
+        <p class="eyebrow">THREE.JS ASSET TEST</p>
+        <h1>Downtown</h1>
+        <p class="subtitle">Built from your Quaternius Downtown City MegaKit assets.</p>
+      </div>
+
+      <div class="control-copy">
+        <span><strong>Drag</strong> rotate</span>
+        <span><strong>Wheel</strong> zoom</span>
+        <span><strong>WASD</strong> move</span>
+        <span><strong>R</strong> reset view</span>
       </div>
     </section>
 
-    <header class="hud" aria-hidden="true">
-      <div class="location-chip">
-        <span class="live-dot"></span>
-        <div>
-          <strong>Cần Thơ, Việt Nam</strong>
-          <small id="mapStatus">Loading map geometry</small>
-        </div>
-      </div>
-      <div id="statusChip" class="status-chip">Standing</div>
-    </header>
+    <div id="loading" class="loading-panel" role="status" aria-live="polite">
+      <div class="loading-bar"><span id="loading-bar-fill"></span></div>
+      <p id="loading-text">Loading city assets…</p>
+    </div>
 
-    <div id="crosshair" class="crosshair" aria-hidden="true"></div>
-
-    <section class="mobile-controls" aria-label="Walking controls">
-      <div class="dpad" aria-label="Movement buttons">
-        <button class="move-btn up" type="button" data-move="forward" aria-label="Move forward">▲</button>
-        <button class="move-btn left" type="button" data-move="left" aria-label="Move left">◀</button>
-        <button class="move-btn down" type="button" data-move="backward" aria-label="Move backward">▼</button>
-        <button class="move-btn right" type="button" data-move="right" aria-label="Move right">▶</button>
-      </div>
-      <div id="lookPad" class="look-pad" aria-label="Drag here to look around">
-        <span>DRAG TO LOOK</span>
-      </div>
-    </section>
-
-    <button id="helpButton" class="help-button" type="button" aria-expanded="false" aria-controls="helpPanel">?</button>
-    <aside id="helpPanel" class="help-panel" hidden>
-      <h2>Controls</h2>
-      <p><strong>Desktop:</strong> click the scene, then use WASD or arrow keys. Move the mouse to look. Press Esc to release the cursor.</p>
-      <p><strong>Mobile:</strong> walk with the directional pad and drag the right-hand zone to look.</p>
-      <p>Buildings and walls block movement. Animated pedestrians use streamed glTF models with a lightweight fallback.</p>
-    </aside>
-
-    <p class="attribution">Map geometry © OpenStreetMap contributors · Three.js r185</p>
+    <div class="credit">
+      3D assets: Quaternius · CC0
+    </div>
   </main>
 
-  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./city.js"></script>
 </body>
 </html>

@@ -1,0 +1,381 @@
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { clone as skeletonClone } from "three/addons/utils/SkeletonUtils.js";
+
+const canvas = document.querySelector("#city-canvas");
+const loadingPanel = document.querySelector("#loading");
+const loadingText = document.querySelector("#loading-text");
+const loadingFill = document.querySelector("#loading-bar-fill");
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: "high-performance"
+});
+
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xb8cad7);
+scene.fog = new THREE.FogExp2(0xb8cad7, 0.0042);
+
+const camera = new THREE.PerspectiveCamera(
+  48,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  700
+);
+camera.position.set(62, 50, 72);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 12;
+controls.maxDistance = 160;
+controls.maxPolarAngle = Math.PI * 0.485;
+
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x6b6257, 2.15);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xfff2d7, 3.25);
+sun.position.set(-50, 82, 25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -95;
+sun.shadow.camera.right = 95;
+sun.shadow.camera.top = 95;
+sun.shadow.camera.bottom = -95;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 220;
+sun.shadow.bias = -0.00025;
+scene.add(sun);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(240, 240),
+  new THREE.MeshStandardMaterial({
+    color: 0x6e7a6d,
+    roughness: 1
+  })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.17;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const district = new THREE.Group();
+scene.add(district);
+
+const loader = new GLTFLoader();
+const ASSET_ROOT = "./assets/city/";
+
+const assetFiles = {
+  large: "Building_Large_2.gltf",
+  medium: "Building_Medium_2_001.gltf",
+  small: "Building_Small_1.gltf",
+  road: "Street_2Lane.gltf",
+  crossing: "Street_4WayIntersection.gltf",
+  planter: "Prop_Planter_Single.gltf",
+  bollard: "Prop_Bollard.gltf",
+  manhole: "Prop_ManholeCover.gltf"
+};
+
+const templates = {};
+let loadedCount = 0;
+const totalCount = Object.keys(assetFiles).length;
+
+function updateLoading(label) {
+  loadedCount += 1;
+  const percent = Math.round((loadedCount / totalCount) * 100);
+  loadingFill.style.width = `${percent}%`;
+  loadingText.textContent = `${label} · ${percent}%`;
+}
+
+function prepareTemplate(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+
+    if (obj.material) {
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const material of materials) {
+        material.side = THREE.FrontSide;
+      }
+    }
+  });
+
+  return root;
+}
+
+async function loadAsset(key, file) {
+  const gltf = await loader.loadAsync(ASSET_ROOT + file);
+  templates[key] = prepareTemplate(gltf.scene);
+  updateLoading(file);
+}
+
+await Promise.all(
+  Object.entries(assetFiles).map(([key, file]) => loadAsset(key, file))
+);
+
+buildCity();
+
+loadingText.textContent = "City ready";
+loadingFill.style.width = "100%";
+setTimeout(() => loadingPanel.classList.add("is-done"), 450);
+
+function instantiate(key) {
+  return skeletonClone(templates[key]);
+}
+
+function settleOnGround(object, y = 0) {
+  object.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+
+  object.position.x -= center.x;
+  object.position.z -= center.z;
+  object.position.y += y - box.min.y;
+  object.updateMatrixWorld(true);
+
+  return object;
+}
+
+function fitFootprint(object, maxX, maxZ, maxScale = 1.3) {
+  object.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const scale = Math.min(maxX / size.x, maxZ / size.z, maxScale);
+
+  object.scale.multiplyScalar(scale);
+  return object;
+}
+
+function addBuilding(type, x, z, rotation = 0, footprintX = 21, footprintZ = 21) {
+  const building = instantiate(type);
+  building.rotation.y = rotation;
+  fitFootprint(building, footprintX, footprintZ);
+  settleOnGround(building, 0.04);
+  building.position.x += x;
+  building.position.z += z;
+  district.add(building);
+  return building;
+}
+
+function addAsset(type, x, z, rotation = 0, scale = 1) {
+  const object = instantiate(type);
+  object.rotation.y = rotation;
+  object.scale.setScalar(scale);
+  settleOnGround(object, 0.025);
+  object.position.x += x;
+  object.position.z += z;
+  district.add(object);
+  return object;
+}
+
+function addRoadSegment(x, z, rotation = 0, lengthScale = 1) {
+  const road = instantiate("road");
+  settleOnGround(road, -0.04);
+  road.rotation.y = rotation;
+  road.scale.z *= lengthScale;
+  road.position.x += x;
+  road.position.z += z;
+  district.add(road);
+  return road;
+}
+
+function addCrossing(x, z) {
+  const crossing = instantiate("crossing");
+  settleOnGround(crossing, -0.035);
+  crossing.position.x += x;
+  crossing.position.z += z;
+  district.add(crossing);
+  return crossing;
+}
+
+function makeTree(x, z, scale = 1) {
+  const tree = new THREE.Group();
+
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.38, 3.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x655142, roughness: 1 })
+  );
+  trunk.position.y = 1.8;
+  trunk.castShadow = true;
+  tree.add(trunk);
+
+  const crownMaterial = new THREE.MeshStandardMaterial({
+    color: 0x477153,
+    roughness: 0.95
+  });
+
+  const crownA = new THREE.Mesh(new THREE.IcosahedronGeometry(1.55, 1), crownMaterial);
+  const crownB = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25, 1), crownMaterial);
+  const crownC = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05, 1), crownMaterial);
+
+  crownA.position.set(0, 4.15, 0);
+  crownB.position.set(-0.8, 3.8, 0.2);
+  crownC.position.set(0.75, 3.75, -0.25);
+
+  for (const crown of [crownA, crownB, crownC]) {
+    crown.castShadow = true;
+    crown.receiveShadow = true;
+    tree.add(crown);
+  }
+
+  tree.position.set(x, 0, z);
+  tree.scale.setScalar(scale);
+  district.add(tree);
+}
+
+function makePark() {
+  const park = new THREE.Mesh(
+    new THREE.BoxGeometry(27, 0.22, 27),
+    new THREE.MeshStandardMaterial({ color: 0x71856d, roughness: 1 })
+  );
+  park.position.set(-25, -0.03, 25);
+  park.receiveShadow = true;
+  district.add(park);
+
+  const pathMat = new THREE.MeshStandardMaterial({ color: 0xb8b2a6, roughness: 1 });
+
+  const pathA = new THREE.Mesh(new THREE.BoxGeometry(25, 0.08, 3), pathMat);
+  pathA.position.set(-25, 0.1, 25);
+  district.add(pathA);
+
+  const pathB = new THREE.Mesh(new THREE.BoxGeometry(3, 0.08, 25), pathMat);
+  pathB.position.set(-25, 0.1, 25);
+  district.add(pathB);
+
+  [
+    [-34, 18, 1.0], [-28, 17, 0.85], [-18, 18, 0.95],
+    [-34, 31, 0.9], [-28, 33, 1.05], [-18, 31, 0.9]
+  ].forEach(([x, z, s]) => makeTree(x, z, s));
+
+  addAsset("planter", -20, 24, 0, 1.1);
+  addAsset("planter", -30, 24, Math.PI, 1.1);
+}
+
+function buildCity() {
+  // Main north-south road.
+  for (let z = -48; z <= 48; z += 12) {
+    if (Math.abs(z) < 8) continue;
+    addRoadSegment(0, z, 0);
+  }
+
+  // Main east-west road.
+  for (let x = -48; x <= 48; x += 12) {
+    if (Math.abs(x) < 8) continue;
+    addRoadSegment(x, 0, Math.PI / 2);
+  }
+
+  addCrossing(0, 0);
+
+  // Four city blocks around the intersection.
+  addBuilding("large", 25, 25, Math.PI, 22, 23);
+  addBuilding("medium", 25, -25, Math.PI / 2, 22, 23);
+  addBuilding("small", -25, -25, 0, 22, 23);
+
+  // North-west is a small civic park instead of another building.
+  makePark();
+
+  // Secondary buildings extending the street canyon.
+  addBuilding("medium", 25, 52, Math.PI, 20, 22);
+  addBuilding("small", 25, -52, Math.PI / 2, 20, 22);
+  addBuilding("small", -25, -52, 0, 20, 22);
+  addBuilding("medium", 52, 25, -Math.PI / 2, 20, 22);
+  addBuilding("small", 52, -25, Math.PI, 20, 22);
+  addBuilding("small", -52, -25, 0, 20, 22);
+  addBuilding("medium", -52, 25, Math.PI / 2, 20, 22);
+
+  // Street furniture.
+  [
+    [-7.2, -7.2], [7.2, -7.2], [-7.2, 7.2], [7.2, 7.2],
+    [-7.2, -12], [7.2, 12]
+  ].forEach(([x, z], i) => addAsset("bollard", x, z, i % 2 ? Math.PI / 2 : 0, 1));
+
+  addAsset("manhole", 2, -17, 0, 1);
+  addAsset("manhole", -2, 22, 0, 1);
+
+  // A few extra trees soften the larger outer blocks.
+  [
+    [-43, 10], [-43, 17], [43, 10], [43, 17],
+    [-43, -10], [43, -10]
+  ].forEach(([x, z]) => makeTree(x, z, 0.72));
+}
+
+const keys = new Set();
+
+window.addEventListener("keydown", (event) => {
+  keys.add(event.key.toLowerCase());
+
+  if (event.key.toLowerCase() === "r") {
+    resetView();
+  }
+});
+
+window.addEventListener("keyup", (event) => {
+  keys.delete(event.key.toLowerCase());
+});
+
+function resetView() {
+  camera.position.set(62, 50, 72);
+  controls.target.set(0, 8, 0);
+  controls.update();
+}
+
+function updateKeyboardMovement(delta) {
+  const speed = 22 * delta;
+  if (![...keys].some((k) => ["w", "a", "s", "d"].includes(k))) return;
+
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  forward.normalize();
+
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const move = new THREE.Vector3();
+
+  if (keys.has("w")) move.add(forward);
+  if (keys.has("s")) move.sub(forward);
+  if (keys.has("d")) move.add(right);
+  if (keys.has("a")) move.sub(right);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    camera.position.add(move);
+    controls.target.add(move);
+  }
+}
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = Math.min(clock.getDelta(), 0.04);
+  updateKeyboardMovement(delta);
+  controls.update();
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+});

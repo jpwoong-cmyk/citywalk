@@ -1,0 +1,161 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #c9d5df;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  color: #f7f8fa;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+}
+
+#city-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.city-hud {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  width: min(390px, calc(100vw - 44px));
+  padding: 18px 20px;
+  background: rgba(13, 18, 24, 0.78);
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 38px rgba(0,0,0,0.22);
+  pointer-events: none;
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #d7dde3;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 40px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.subtitle {
+  margin: 9px 0 0;
+  max-width: 32rem;
+  color: #c9d0d7;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.control-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  color: #aeb8c2;
+  font-size: 11px;
+}
+
+.control-copy strong {
+  color: #fff;
+}
+
+.loading-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  width: min(360px, calc(100vw - 44px));
+  padding: 13px 15px;
+  transform: translateX(-50%);
+  background: rgba(13,18,24,0.85);
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(10px);
+  transition: opacity 350ms ease, transform 350ms ease;
+}
+
+.loading-panel.is-done {
+  opacity: 0;
+  transform: translate(-50%, 10px);
+  pointer-events: none;
+}
+
+.loading-panel p {
+  margin: 8px 0 0;
+  color: #d7dde3;
+  font-size: 12px;
+}
+
+.loading-bar {
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.16);
+}
+
+.loading-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #fff;
+  transition: width 180ms ease;
+}
+
+.credit {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  color: rgba(255,255,255,0.68);
+  font-size: 10px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  pointer-events: none;
+}
+
+@media (max-width: 650px) {
+  .city-hud {
+    top: 12px;
+    left: 12px;
+    width: calc(100vw - 24px);
+    padding: 14px 15px;
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  .control-copy {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .loading-panel {
+    bottom: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-panel,
+  .loading-bar span {
+    transition: none;
+  }
+}

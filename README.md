@@ -1,50 +1,122 @@
-# Cần Thơ Realistic Street Walk
+# Downtown Three.js City
 
-A first-person Three.js reconstruction centred on **10.044179, 105.7856213** in Cần Thơ, Vietnam.
+This is a plain HTML/CSS/JavaScript Three.js demo made from your uploaded
+Quaternius **Downtown City MegaKit [Standard]**.
 
-## What changed from the prototype
+No Node.js, npm, Blender, Adobe, Unity or Unreal is required to run this version.
 
-- Replaced the broad toy-like layout with live OpenStreetMap road and building geometry when available.
-- Rebuilt buildings from extruded footprints with weathered materials, recessed windows, shopfronts, balconies, awnings and air-conditioning units.
-- Added a restrained physically based lighting setup, environmental reflections, soft shadows, fog and desktop SSAO.
-- Replaced the original capsule crowd with animated glTF pedestrians streamed from the official Three.js examples. A local articulated fallback is included if those assets cannot load.
-- Rebuilt parked scooters, utility poles, hanging cables, pavements, drains, trees and planters with more detailed geometry.
-- Reduced the crowd count so the people feel less like a marching clone army and perform better in a browser.
-
-## Run locally
-
-The project uses JavaScript modules, so serve the folder through a local web server.
-
-```bash
-python -m http.server 8080
-```
-
-Open:
+## Folder structure
 
 ```text
-http://localhost:8080
+downtown_threejs_city/
+├─ index.html
+├─ style.css
+├─ city.js
+├─ ASSET_LICENSE.txt
+└─ assets/
+   └─ city/
+      ├─ Building_Large_2.gltf
+      ├─ Building_Large_2.bin
+      ├─ Building_Medium_2_001.gltf
+      ├─ Building_Medium_2_001.bin
+      ├─ Building_Small_1.gltf
+      ├─ Building_Small_1.bin
+      ├─ Street_2Lane.gltf
+      ├─ Street_2Lane.bin
+      ├─ Street_4WayIntersection.gltf
+      ├─ Street_4WayIntersection.bin
+      ├─ props...
+      └─ texture PNGs required by those models
 ```
+
+IMPORTANT: keep the `.gltf`, `.bin`, and PNG files together in `assets/city/`.
+The `.gltf` files contain references to the `.bin` and texture files.
+
+## Easiest way for you to run it
+
+### GitHub + Vercel
+
+1. Create a new GitHub repository, for example `threejs-city`.
+2. Upload everything INSIDE this project folder to the repository root.
+3. The repository root should contain `index.html`, not another nested folder.
+4. Import that repository into Vercel.
+5. Framework preset: **Other**.
+6. No build command is needed.
+7. No output directory is needed.
+8. Deploy.
+
+Three.js and GLTFLoader are loaded from jsDelivr in `index.html`.
+
+## Why double-clicking index.html may fail
+
+Browsers often block `.gltf` / `.bin` file loading when a page is opened through
+`file://`.
+
+So this may NOT work correctly:
+
+```text
+C:\my-city\index.html
+```
+
+opened by double-click.
+
+Use Vercel, GitHub Pages, or a local web server instead.
 
 ## Controls
 
-- `WASD` or arrow keys: move
-- Mouse: look around after clicking the scene
-- `Shift`: jog
-- `Esc`: release pointer lock
-- Mobile: directional pad and drag-to-look zone
+- Mouse drag: rotate camera
+- Mouse wheel: zoom
+- W/A/S/D: move camera and orbit target
+- R: reset view
 
-## Data and external assets
+## What the demo uses from the MegaKit
 
-- Rendering: Three.js r185
-- Map geometry: OpenStreetMap through the public Overpass API, with a bundled fallback layout
-- Animated people: `Xbot.glb`, `Michelle.glb` and `readyplayer.me.glb` from the official Three.js examples
+The demo deliberately copies only the assets it needs instead of the entire ~89 MB
+glTF export folder.
 
-The scene does not download, copy or package Google Maps imagery. It uses the supplied coordinates as the centre point and reconstructs the area from open geometry plus original procedural detail.
+Used:
+- Building_Large_2
+- Building_Medium_2_001
+- Building_Small_1
+- Street_2Lane
+- Street_4WayIntersection
+- Prop_Planter_Single
+- Prop_Bollard
+- Prop_ManholeCover
+- their referenced BIN and PNG texture files
 
-## Deployment
+The supplied pack license is included as `ASSET_LICENSE.txt`.
+The uploaded pack states that the assets are CC0 1.0.
 
-This is a static site and can be deployed directly to Vercel, GitHub Pages or another static host. Keep the folder structure unchanged.
+## Where to edit the city
 
-## Performance
+Open `city.js`.
 
-Desktop devices with at least 4 GB reported device memory receive SSAO. Mobile and lower-memory devices render without the extra post-processing pass. Pixel ratio is capped to avoid unnecessary GPU load.
+The main layout is in:
+
+```js
+function buildCity() {
+   ...
+}
+```
+
+Buildings use:
+
+```js
+addBuilding("large", x, z, rotation, lotWidth, lotDepth);
+```
+
+Roads use:
+
+```js
+addRoadSegment(x, z, rotation);
+```
+
+Props use:
+
+```js
+addAsset("bollard", x, z, rotation, scale);
+```
+
+You can therefore move the city around by changing numbers instead of editing
+the 3D model files themselves.
